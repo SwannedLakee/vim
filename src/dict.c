@@ -1092,6 +1092,33 @@ failret:
 }
 
 /*
+ * Evaluate a literal dictionary: #{key: val, key: val}
+ * "*arg" points to the "#".
+ * On return, "*arg" points to the character after the Dict.
+ * Return OK or FAIL.  Returns NOTDONE for {expr}.
+ */
+    int
+eval_lit_dict(char_u **arg, typval_T *rettv, evalarg_T *evalarg)
+{
+    int		vim9script = in_vim9script();
+    int		ret = OK;
+
+    if (vim9script)
+    {
+	ret = vim9_bad_comment(*arg) ? FAIL : NOTDONE;
+    }
+    else if ((*arg)[1] == '{')
+    {
+	++*arg;
+	ret = eval_dict(arg, rettv, evalarg, TRUE);
+    }
+    else
+	ret = NOTDONE;
+
+    return ret;
+}
+
+/*
  * Go over all entries in "d2" and add them to "d1".
  * When "action" is "error" then a duplicate key is an error.
  * When "action" is "force" then a duplicate key is overwritten.
@@ -1300,12 +1327,18 @@ dict_extend_func(
 
 	action = tv_get_string_chk(&argvars[2]);
 	if (action == NULL)
+	{
+	    if (is_new)
+		dict_unref(d1);
 	    return;
+	}
 	for (i = 0; i < 3; ++i)
 	    if (STRCMP(action, av[i]) == 0)
 		break;
 	if (i == 3)
 	{
+	    if (is_new)
+		dict_unref(d1);
 	    semsg(_(e_invalid_argument_str), action);
 	    return;
 	}

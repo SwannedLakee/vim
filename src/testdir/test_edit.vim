@@ -1952,6 +1952,11 @@ func Test_edit_insert_reg()
   let @r = 'sample'
   call feedkeys("a\<C-R>=SaveFirstLine()\<CR>", "xt")
   call assert_equal('"', g:Line)
+
+  " Test for inserting an null and an empty list
+  call feedkeys("a\<C-R>=test_null_list()\<CR>", "xt")
+  call feedkeys("a\<C-R>=[]\<CR>", "xt")
+  call assert_equal(['r'], getbufline('', 1, '$'))
   call test_override('ALL', 0)
   close!
 endfunc
@@ -1962,8 +1967,8 @@ func Test_edit_ctrl_r_failed()
 
   let buf = RunVimInTerminal('', #{rows: 6, cols: 60})
 
-  " trying to insert a dictionary produces an error
-  call term_sendkeys(buf, "i\<C-R>={}\<CR>")
+  " trying to insert a blob produces an error
+  call term_sendkeys(buf, "i\<C-R>=0z\<CR>")
 
   " ending Insert mode should put the cursor back on the ':'
   call term_sendkeys(buf, ":\<Esc>")

@@ -2741,6 +2741,55 @@ func Test_wildmenu_pum_odd_wildchar()
   call StopVimInTerminal(buf)
 endfunc
 
+" Test that 'rightleft' should not affect cmdline completion popup menu.
+func Test_wildmenu_pum_rightleft()
+  CheckFeature rightleft
+  CheckScreendump
+
+  let lines =<< trim END
+    set wildoptions=pum
+    set rightleft
+  END
+  call writefile(lines, 'Xwildmenu_pum_rl', 'D')
+  let buf = RunVimInTerminal('-S Xwildmenu_pum_rl', #{rows: 10, cols: 50})
+
+  call term_sendkeys(buf, ":sign \<Tab>")
+  call VerifyScreenDump(buf, 'Test_wildmenu_pum_rl', {})
+
+  call StopVimInTerminal(buf)
+endfunc
+
+" Test highlighting matched text in cmdline completion popup menu.
+func Test_wildmenu_pum_hl_match()
+  CheckScreendump
+
+  let lines =<< trim END
+    set wildoptions=pum,fuzzy
+    hi PmenuMatchSel  ctermfg=6 ctermbg=7
+    hi PmenuMatch     ctermfg=4 ctermbg=225
+  END
+  call writefile(lines, 'Xwildmenu_pum_hl', 'D')
+  let buf = RunVimInTerminal('-S Xwildmenu_pum_hl', #{rows: 10, cols: 50})
+
+  call term_sendkeys(buf, ":sign plc\<Tab>")
+  call VerifyScreenDump(buf, 'Test_wildmenu_pum_hl_match_1', {})
+  call term_sendkeys(buf, "\<Tab>")
+  call VerifyScreenDump(buf, 'Test_wildmenu_pum_hl_match_2', {})
+  call term_sendkeys(buf, "\<Tab>")
+  call VerifyScreenDump(buf, 'Test_wildmenu_pum_hl_match_3', {})
+  call term_sendkeys(buf, "\<Esc>:set wildoptions-=fuzzy\<CR>")
+  call TermWait(buf)
+  call term_sendkeys(buf, ":sign un\<Tab>")
+  call VerifyScreenDump(buf, 'Test_wildmenu_pum_hl_match_4', {})
+  call term_sendkeys(buf, "\<Tab>")
+  call VerifyScreenDump(buf, 'Test_wildmenu_pum_hl_match_5', {})
+  call term_sendkeys(buf, "\<Tab>")
+  call VerifyScreenDump(buf, 'Test_wildmenu_pum_hl_match_6', {})
+  call term_sendkeys(buf, "\<Esc>")
+
+  call StopVimInTerminal(buf)
+endfunc
+
 " Test for completion after a :substitute command followed by a pipe (|)
 " character
 func Test_cmdline_complete_substitute()
@@ -3563,7 +3612,7 @@ func Test_cmdline_complete_bang_cmd_argument()
 endfunc
 
 func Call_cmd_funcs()
-  return string([getcmdpos(), getcmdscreenpos(), getcmdcompltype()])
+  return [getcmdpos(), getcmdscreenpos(), getcmdcompltype()]
 endfunc
 
 func Test_screenpos_and_completion()
@@ -3571,13 +3620,24 @@ func Test_screenpos_and_completion()
   call assert_equal(0, getcmdscreenpos())
   call assert_equal('', getcmdcompltype())
 
-  cnoremap <expr> <F2> string([getcmdpos(), getcmdscreenpos(), getcmdcompltype()])
+  cnoremap <expr> <F2> string(Call_cmd_funcs())
   call feedkeys(":let a\<F2>\<C-B>\"\<CR>", "xt")
   call assert_equal("\"let a[6, 7, 'var']", @:)
   call feedkeys(":quit \<F2>\<C-B>\"\<CR>", "xt")
   call assert_equal("\"quit [6, 7, '']", @:)
   call feedkeys(":nosuchcommand \<F2>\<C-B>\"\<CR>", "xt")
   call assert_equal("\"nosuchcommand [15, 16, '']", @:)
+
+  " Check that getcmdcompltype() doesn't interfere with cmdline completion.
+  let g:results = []
+  cnoremap <F2> <Cmd>let g:results += [[getcmdline()] + Call_cmd_funcs()]<CR>
+  call feedkeys(":sign un\<Tab>\<F2>\<Tab>\<F2>\<Tab>\<F2>\<C-C>", "xt")
+  call assert_equal([
+        \ ['sign undefine', 14, 15, 'sign'],
+        \ ['sign unplace', 13, 14, 'sign'],
+        \ ['sign un', 8, 9, 'sign']], g:results)
+
+  unlet g:results
   cunmap <F2>
 endfunc
 
@@ -3733,9 +3793,9 @@ func Test_custom_completion()
   call assert_fails("call getcompletion('', 'custom')", 'E475:')
   call assert_fails("call getcompletion('', 'customlist')", 'E475:')
 
-  call assert_equal(getcompletion('', 'custom,CustomComplete1'), ['a', 'b', 'c'])
-  call assert_equal(getcompletion('', 'customlist,CustomComplete2'), ['a', 'b'])
-  call assert_equal(getcompletion('b', 'customlist,CustomComplete2'), ['b'])
+  call assert_equal(['a', 'b', 'c'], getcompletion('', 'custom,CustomComplete1'))
+  call assert_equal(['a', 'b'], getcompletion('', 'customlist,CustomComplete2'))
+  call assert_equal(['b'], getcompletion('b', 'customlist,CustomComplete2'))
 
   delcom Test1
   delcom Test2
@@ -3790,6 +3850,23 @@ func Test_buffer_completion()
   call assert_equal(expected, getcompletion('Foo', 'buffer'))
   call feedkeys(":b Foo\<C-A>\<C-B>\"\<CR>", 'xt')
   call assert_equal("\"b Xbuf_complete/Foobar.c Xbuf_complete/MyFoobar.c AFoobar.h", @:)
+endfunc
+
+" :set t_??
+func Test_term_option()
+  set wildoptions&
+  let _cpo = &cpo
+  set cpo-=C
+  " There may be more, test only until t_xo
+  let expected='"set t_AB t_AF t_AU t_AL t_al t_bc t_BE t_BD t_cd t_ce t_Ce t_CF t_cl t_cm'
+        \ .. ' t_Co t_CS t_Cs t_cs t_CV t_da t_db t_DL t_dl t_ds t_Ds t_EC t_EI t_fs t_fd t_fe'
+        \ .. ' t_GP t_IE t_IS t_ke t_ks t_le t_mb t_md t_me t_mr t_ms t_nd t_op t_RF t_RB t_RC'
+        \ .. ' t_RI t_Ri t_RK t_RS t_RT t_RV t_Sb t_SC t_se t_Sf t_SH t_SI t_Si t_so t_SR t_sr'
+        \ .. ' t_ST t_Te t_te t_TE t_ti t_TI t_Ts t_ts t_u7 t_ue t_us t_Us t_ut t_vb t_ve t_vi'
+        \ .. ' t_VS t_vs t_WP t_WS t_XM t_xn t_xs t_ZH t_ZR t_8f t_8b t_8u t_xo .*'
+  call feedkeys(":set t_\<C-A>\<C-B>\"\<CR>", 'tx')
+  call assert_match(expected, @:)
+  let &cpo = _cpo
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

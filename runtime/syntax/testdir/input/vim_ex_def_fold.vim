@@ -86,7 +86,7 @@ def Foo()
 enddef | echo "Foo"
 
 def Foo()
-enddef " comment
+enddef # comment
 
 
 " parameters
@@ -107,4 +107,24 @@ def Foo()
   # Vim9-script comment
   "useless string"
 enddef
+
+
+" fold-region ending
+
+def Foo()
+  # enddef
+enddef
+
+def Foo()
+  echo "enddef"
+enddef
+
+def Foo()
+  let x =<< END
+    endfunction
+  END
+enddef
+
+:def Foo()
+:enddef
 

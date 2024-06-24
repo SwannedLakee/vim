@@ -187,7 +187,7 @@ MINOR=		1
 !ENDIF
 
 !IF ![$(PS) $(PSFLAGS) try{Out-File -FilePath '.\patchlvl.tmp' -InputObject \
-	\"PATCHLEVEL=$$(((Get-Content -Path '.\version.c' \
+	\"PATCHLEVEL=$$([decimal^]((Get-Content -Path '.\version.c' \
 	-TotalCount ((Select-String -Pattern 'static int included_patches' \
 	-Path '.\version.c').LineNumber+3))[-1^]).Trim().TrimEnd(','))\"} \
 	catch{exit 1}]
@@ -718,6 +718,7 @@ OBJ = \
 	$(OUTDIR)\float.obj \
 	$(OUTDIR)\fold.obj \
 	$(OUTDIR)\getchar.obj \
+	$(OUTDIR)\gc.obj \
 	$(OUTDIR)\gui_xim.obj \
 	$(OUTDIR)\hardcopy.obj \
 	$(OUTDIR)\hashtab.obj \
@@ -1321,6 +1322,10 @@ $(OUTDIR):
 
 CFLAGS_INST = /nologo /O2 -DNDEBUG -DWIN32 -DWINVER=$(WINVER) -D_WIN32_WINNT=$(WINVER) $(CFLAGS_DEPR)
 
+!IFDEF PATCHLEVEL
+CFLAGS_INST=	$(CFLAGS_INST) -DVIM_VERSION_PATCHLEVEL=$(PATCHLEVEL)
+!ENDIF
+
 install.exe: dosinst.c dosinst.h version.h
 	$(CC) $(CFLAGS_INST) dosinst.c kernel32.lib shell32.lib \
 		user32.lib ole32.lib advapi32.lib uuid.lib \
@@ -1571,6 +1576,8 @@ $(OUTDIR)/fold.obj:	$(OUTDIR) fold.c  $(INCL)
 
 $(OUTDIR)/getchar.obj:	$(OUTDIR) getchar.c  $(INCL)
 
+$(OUTDIR)/gc.obj:	$(OUTDIR) gc.c  $(INCL)
+
 $(OUTDIR)/gui_xim.obj:	$(OUTDIR) gui_xim.c  $(INCL)
 
 $(OUTDIR)/hardcopy.obj:	$(OUTDIR) hardcopy.c  $(INCL) version.h
@@ -1631,7 +1638,6 @@ $(OUTDIR)/if_tcl.obj: $(OUTDIR) if_tcl.c  $(INCL)
 	$(CC) $(CFLAGS_OUTDIR) $(TCL_INC) if_tcl.c
 
 $(OUTDIR)/iscygpty.obj:	$(OUTDIR) iscygpty.c $(CUI_INCL)
-	$(CC) $(CFLAGS_OUTDIR) iscygpty.c
 
 $(OUTDIR)/job.obj:	$(OUTDIR) job.c $(INCL)
 
@@ -1911,6 +1917,7 @@ proto.h: \
 	proto/findfile.pro \
 	proto/float.pro \
 	proto/getchar.pro \
+	proto/gc.pro \
 	proto/gui_xim.pro \
 	proto/hardcopy.pro \
 	proto/hashtab.pro \

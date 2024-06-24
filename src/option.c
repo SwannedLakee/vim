@@ -364,6 +364,76 @@ set_init_clean_rtp(void)
 }
 #endif
 
+#ifdef UNIX
+/*
+ * Change 'runtimepath' and 'packdir' to '$XDG_CONFIG_HOME/vim' if the only
+ * vimrc found is located in '$XDG_CONFIG_HOME/vim/vimrc'.
+ * In case the '$XDG_CONFIG_HOME' variable is not set, '$HOME/.config' is used
+ * as a fallback as is defined in the XDG base dir specification:
+ * <https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html>
+ */
+    static void
+set_init_xdg_rtp(void)
+{
+    int		opt_idx;
+    int		has_xdg_env = TRUE;
+    int		should_free_xdg_dir = FALSE;
+    char_u	*vimrc1 = NULL;
+    char_u	*vimrc2 = NULL;
+    char_u	*xdg_dir = NULL;
+    char_u	*xdg_rtp = NULL;
+    char_u	*vimrc_xdg = NULL;
+
+    // initialize chartab, so we can expand $HOME
+    (void)init_chartab();
+    vimrc1 = expand_env_save((char_u *)USR_VIMRC_FILE);
+    vimrc2 = expand_env_save((char_u *)USR_VIMRC_FILE2);
+
+    xdg_dir = mch_getenv("XDG_CONFIG_HOME");
+    if (!xdg_dir)
+    {
+	xdg_dir = expand_env_save((char_u *)"~/.config");
+	should_free_xdg_dir = TRUE;
+	has_xdg_env = FALSE;
+    }
+    vimrc_xdg = concat_fnames(xdg_dir, (char_u *)"vim/vimrc", TRUE);
+
+    if (file_is_readable(vimrc1) || file_is_readable(vimrc2) ||
+	    !file_is_readable(vimrc_xdg))
+	goto theend;
+
+    xdg_rtp = has_xdg_env ? (char_u *)XDG_RUNTIMEPATH
+	: (char_u *)XDG_RUNTIMEPATH_FB;
+
+    if ((opt_idx = findoption((char_u *)"runtimepath")) < 0)
+	goto theend;
+
+    options[opt_idx].def_val[VI_DEFAULT] = xdg_rtp;
+    p_rtp = xdg_rtp;
+
+    if ((opt_idx = findoption((char_u *)"packpath")) < 0)
+	goto theend;
+
+    options[opt_idx].def_val[VI_DEFAULT] = xdg_rtp;
+    p_pp = xdg_rtp;
+
+#if defined(XDG_VDIR) && defined(FEAT_SESSION)
+    if ((opt_idx = findoption((char_u *)"viewdir")) < 0)
+	goto theend;
+
+    options[opt_idx].def_val[VI_DEFAULT] = (char_u *)XDG_VDIR;
+    p_vdir = (char_u *)XDG_VDIR;
+#endif
+
+theend:
+    vim_free(vimrc1);
+    vim_free(vimrc2);
+    vim_free(vimrc_xdg);
+    if (should_free_xdg_dir)
+	vim_free(xdg_dir);
+}
+#endif
+
 /*
  * Expand environment variables and things like "~" for the defaults.
  * If option_expand() returns non-NULL the variable is expanded.  This can
@@ -588,6 +658,7 @@ set_init_1(int clean_arg)
     set_options_default(0);
 
 #ifdef UNIX
+    set_init_xdg_rtp();
     set_init_restricted_mode();
 #endif
 
@@ -792,7 +863,10 @@ set_string_default_esc(char *name, char_u *val, int escape)
 
     opt_idx = findoption((char_u *)name);
     if (opt_idx < 0)
+    {
+	vim_free(p);
 	return;
+    }
 
     if (options[opt_idx].flags & P_DEF_ALLOCED)
 	vim_free(options[opt_idx].def_val[VI_DEFAULT]);
@@ -6150,6 +6224,10 @@ unset_global_local_option(char_u *name, void *from)
 	    clear_string_option(&buf->b_p_inc);
 	    break;
 # endif
+	case PV_COT:
+	    clear_string_option(&buf->b_p_cot);
+	    buf->b_cot_flags = 0;
+	    break;
 	case PV_DICT:
 	    clear_string_option(&buf->b_p_dict);
 	    break;
@@ -6259,6 +6337,7 @@ get_varp_scope(struct vimoption *p, int scope)
 	    case PV_DEF:  return (char_u *)&(curbuf->b_p_def);
 	    case PV_INC:  return (char_u *)&(curbuf->b_p_inc);
 #endif
+	    case PV_COT:  return (char_u *)&(curbuf->b_p_cot);
 	    case PV_DICT: return (char_u *)&(curbuf->b_p_dict);
 	    case PV_TSR:  return (char_u *)&(curbuf->b_p_tsr);
 #ifdef FEAT_COMPL_FUNC
@@ -6339,6 +6418,8 @@ get_varp(struct vimoption *p)
 	case PV_INC:	return *curbuf->b_p_inc != NUL
 				    ? (char_u *)&(curbuf->b_p_inc) : p->var;
 #endif
+	case PV_COT:	return *curbuf->b_p_cot != NUL
+				    ? (char_u *)&(curbuf->b_p_cot) : p->var;
 	case PV_DICT:	return *curbuf->b_p_dict != NUL
 				    ? (char_u *)&(curbuf->b_p_dict) : p->var;
 	case PV_TSR:	return *curbuf->b_p_tsr != NUL
@@ -7131,6 +7212,8 @@ buf_copy_options(buf_T *buf, int flags)
 	    COPY_OPT_SCTX(buf, BV_INEX);
 # endif
 #endif
+	    buf->b_p_cot = empty_option;
+	    buf->b_cot_flags = 0;
 	    buf->b_p_dict = empty_option;
 	    buf->b_p_tsr = empty_option;
 #ifdef FEAT_COMPL_FUNC
@@ -8281,10 +8364,10 @@ get_sidescrolloff_value(void)
 }
 
 /*
- * Get the local or global value of 'backupcopy'.
+ * Get the local or global value of 'backupcopy' flags.
  */
     unsigned int
-get_bkc_value(buf_T *buf)
+get_bkc_flags(buf_T *buf)
 {
     return buf->b_bkc_flags ? buf->b_bkc_flags : bkc_flags;
 }
@@ -8303,7 +8386,7 @@ get_flp_value(buf_T *buf)
 #endif
 
 /*
- * Get the local or global value of the 'virtualedit' flags.
+ * Get the local or global value of 'virtualedit' flags.
  */
     unsigned int
 get_ve_flags(void)

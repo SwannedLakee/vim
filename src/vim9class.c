@@ -136,6 +136,13 @@ parse_member(
 	fill_evalarg_from_eap(&evalarg, eap, FALSE);
 	(void)skip_expr_concatenate(&init_arg, &expr_start, &expr_end, &evalarg);
 
+	init_arg = skipwhite(init_arg);
+	if (*init_arg != NUL && !vim9_comment_start(init_arg))
+	{
+	    semsg(_(e_trailing_characters_str), init_arg);
+	    return FAIL;
+	}
+
 	// No type specified for the member.  Set it to "any" and the correct
 	// type will be set when the object is instantiated.
 	if (type == NULL)
@@ -2080,6 +2087,12 @@ early_ret:
 	    has_public = TRUE;
 	    p = skipwhite(line + 6);
 
+	    if (STRNCMP(p, "def", 3) == 0)
+	    {
+		emsg(_(e_public_keyword_not_supported_for_method));
+		break;
+	    }
+
 	    if (STRNCMP(p, "var", 3) != 0 && STRNCMP(p, "static", 6) != 0
 		&& STRNCMP(p, "final", 5) != 0 && STRNCMP(p, "const", 5) != 0)
 	    {
@@ -3829,10 +3842,40 @@ object_len(object_T *obj)
 }
 
 /*
+ * Return TRUE when two objects have exactly the same values.
+ */
+    int
+object_equal(
+	object_T *o1,
+	object_T *o2,
+	int		ic,	// ignore case for strings
+	int		recursive)  // TRUE when used recursively
+{
+    class_T *cl1, *cl2;
+
+    if (o1 == o2)
+	return TRUE;
+    if (o1 == NULL || o2 == NULL)
+	return FALSE;
+
+    cl1 = o1->obj_class;
+    cl2 = o2->obj_class;
+
+    if (cl1 != cl2 || cl1 == NULL || cl2 == NULL)
+	return FALSE;
+
+    for (int i = 0; i < cl1->class_obj_member_count; ++i)
+	if (!tv_equal((typval_T *)(o1 + 1) + i, (typval_T *)(o2 + 1) + i, ic, recursive))
+	    return FALSE;
+
+    return TRUE;
+}
+
+/*
  * Return a textual representation of object "obj"
  */
     char_u *
-object_string(
+object2string(
     object_T	*obj,
     char_u	*numbuf,
     int		copyID,

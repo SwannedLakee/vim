@@ -654,8 +654,8 @@ popup_show_curline(win_T *wp)
 	    wp->w_topline = wp->w_buffer->b_ml.ml_line_count;
 	while (wp->w_topline < wp->w_cursor.lnum
 		&& wp->w_topline < wp->w_buffer->b_ml.ml_line_count
-		&& plines_m_win(wp, wp->w_topline, wp->w_cursor.lnum, FALSE)
-								> wp->w_height)
+		&& plines_m_win(wp, wp->w_topline, wp->w_cursor.lnum,
+					    wp->w_height + 1) > wp->w_height)
 	    ++wp->w_topline;
     }
 
@@ -2842,6 +2842,54 @@ f_popup_settext(typval_T *argvars, typval_T *rettv UNUSED)
     popup_set_buffer_text(wp->w_buffer, argvars[1]);
     redraw_win_later(wp, UPD_NOT_VALID);
     popup_adjust_position(wp);
+}
+
+/*
+ * popup_setbuf({id}, {bufnr})
+ */
+    void
+f_popup_setbuf(typval_T *argvars, typval_T *rettv UNUSED)
+{
+    int		id;
+    win_T	*wp;
+    buf_T	*buf;
+
+    rettv->v_type = VAR_BOOL;
+    rettv->vval.v_number = VVAL_FALSE;
+
+    if (check_for_number_arg(argvars, 0) == FAIL
+		|| check_for_buffer_arg(argvars, 1) == FAIL)
+	return;
+
+    id = (int)tv_get_number(&argvars[0]);
+    wp = find_popup_win(id);
+    if (wp == NULL)
+	return;
+
+    buf = tv_get_buf_from_arg(&argvars[1]);
+
+    if (buf == NULL)
+	return;
+#ifdef FEAT_TERMINAL
+    if (buf->b_term != NULL && popup_terminal_exists())
+    {
+	emsg(_(e_cannot_open_second_popup_with_terminal));
+	return;
+    }
+#endif
+
+    if (wp->w_buffer != buf)
+    {
+	wp->w_buffer->b_nwindows--;
+	win_init_popup_win(wp, buf);
+	set_local_options_default(wp, FALSE);
+	swap_exists_action = SEA_READONLY;
+	buffer_ensure_loaded(buf);
+	swap_exists_action = SEA_NONE;
+	redraw_win_later(wp, UPD_NOT_VALID);
+	popup_adjust_position(wp);
+    }
+    rettv->vval.v_number = VVAL_TRUE;
 }
 
     static void
