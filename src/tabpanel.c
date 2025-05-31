@@ -64,15 +64,21 @@ tabpanelopt_changed(void)
     p = p_tplo;
     while (*p != NUL)
     {
-	if (STRNCMP(p, "align:left", 10) == 0)
+	if (STRNCMP(p, "align:", 6) == 0)
 	{
-	    p += 10;
-	    new_align = ALIGN_LEFT;
-	}
-	else if (STRNCMP(p, "align:right", 11) == 0)
-	{
-	    p += 11;
-	    new_align = ALIGN_RIGHT;
+	    p += 6;
+	    if (STRNCMP(p, "left", 4) == 0)
+	    {
+		p += 4;
+		new_align = ALIGN_LEFT;
+	    }
+	    else if (STRNCMP(p, "right", 5) == 0)
+	    {
+		p += 5;
+		new_align = ALIGN_RIGHT;
+	    }
+	    else
+		return FAIL;
 	}
 	else if (STRNCMP(p, "columns:", 8) == 0 && VIM_ISDIGIT(p[8]))
 	{
@@ -490,6 +496,7 @@ starts_with_percent_and_bang(tabpanel_T *pargs)
 {
     int		len = 0;
     char_u	*usefmt = p_tpl;
+    int		did_emsg_before = did_emsg;
 
     if (usefmt == NULL)
 	return NULL;
@@ -519,6 +526,13 @@ starts_with_percent_and_bang(tabpanel_T *pargs)
 	    usefmt = p;
 
 	do_unlet((char_u *)"g:tabpanel_winid", TRUE);
+
+	if (did_emsg > did_emsg_before)
+	{
+	    usefmt = NULL;
+	    set_string_option_direct(opt_name, -1, (char_u *)"",
+		    OPT_FREE | opt_scope, SID_ERROR);
+	}
     }
 #endif
 
@@ -627,6 +641,12 @@ do_by_tplmode(
 		args.prow = &row;
 		args.pcol = &col;
 		draw_tabpanel_userdefined(tplmode, &args);
+		// p_tpl could have been freed in build_stl_str_hl()
+		if (p_tpl == NULL || *p_tpl == NUL)
+		{
+		    usefmt = NULL;
+		    break;
+		}
 
 		p += i;
 		i = 0;

@@ -3761,6 +3761,27 @@ func Test_Visual_doautoall_redraw()
   %bwipe!
 endfunc
 
+func Test_get_Visual_selection_in_curbuf_autocmd()
+  call test_override('starting', 1)
+  new
+  autocmd OptionSet list let b:text = getregion(getpos('.'), getpos('v'))
+  call setline(1, 'foo bar baz')
+
+  normal! gg0fbvtb
+  setlocal list
+  call assert_equal(['bar '], b:text)
+  exe "normal! \<Esc>"
+
+  normal! v0
+  call setbufvar('%', '&list', v:false)
+  call assert_equal(['foo bar '], b:text)
+  exe "normal! \<Esc>"
+
+  autocmd! OptionSet list
+  bwipe!
+  call test_override('starting', 0)
+endfunc
+
 " This was using freed memory.
 func Test_BufNew_arglocal()
   arglocal
@@ -5438,6 +5459,22 @@ func Test_reuse_curbuf_switch()
   call assert_equal(1, bufloaded(other_buf))
 
   unlet! s:asdf_win s:triggered
+  call CleanUpTestAuGroup()
+  %bw!
+endfunc
+
+func Test_eventignore_subtract()
+  set eventignore=all,-WinEnter
+  augroup testing
+    autocmd!
+    autocmd WinEnter * ++once let s:triggered = 1
+  augroup END
+
+  new
+  call assert_equal(1, s:triggered)
+
+  set eventignore&
+  unlet! s:triggered
   call CleanUpTestAuGroup()
   %bw!
 endfunc
