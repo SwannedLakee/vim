@@ -29,7 +29,9 @@ static char *(p_bo_values[]) = {"all", "backspace", "cursor", "complete",
 static char *(p_briopt_values[]) = {"shift:", "min:", "sbr", "list:", "column:", NULL};
 #endif
 #if defined(FEAT_TABPANEL)
-static char *(p_tpl_values[]) = {"wrap", "align:", "columns:", "vert:", NULL};
+// Note: Keep this in sync with tabpanelopt_changed()
+static char *(p_tplo_values[]) = {"align:", "columns:", "vert", NULL};
+static char *(p_tplo_align_values[]) = {"left", "right", NULL};
 #endif
 #if defined(FEAT_DIFF)
 // Note: Keep this in sync with diffopt_changed()
@@ -1592,10 +1594,10 @@ did_set_complete(optset_T *args)
 	}
 	*buf_ptr = NUL;
 
-	if (vim_strchr((char_u *)".wbuksid]tUfo", *buffer) == NULL)
+	if (vim_strchr((char_u *)".wbuksid]tUFo", *buffer) == NULL)
 	    return illegal_char(args->os_errbuf, args->os_errbuflen, *buffer);
 
-	if (vim_strchr((char_u *)"ksf", *buffer) == NULL && *(buffer + 1) != NUL
+	if (vim_strchr((char_u *)"ksF", *buffer) == NULL && *(buffer + 1) != NUL
 		&& *(buffer + 1) != '^')
 	    char_before = *buffer;
 	else
@@ -1640,7 +1642,7 @@ did_set_complete(optset_T *args)
 expand_set_complete(optexpand_T *args, int *numMatches, char_u ***matches)
 {
     static char *(p_cpt_values[]) = {
-	".", "w", "b", "u", "k", "kspell", "s", "i", "d", "]", "t", "U", "f", "o",
+	".", "w", "b", "u", "k", "kspell", "s", "i", "d", "]", "t", "U", "F", "o",
 	NULL};
     return expand_set_opt_string(
 	    args,
@@ -2246,11 +2248,18 @@ static int expand_eiw = FALSE;
     static char_u *
 get_eventignore_name(expand_T *xp, int idx)
 {
+    int subtract = *xp->xp_pattern == '-';
     // 'eventignore(win)' allows special keyword "all" in addition to
     // all event names.
-    if (idx == 0)
+    if (!subtract && idx == 0)
 	return (char_u *)"all";
-    return get_event_name_no_group(xp, idx - 1, expand_eiw);
+
+    char_u *name = get_event_name_no_group(xp, idx - 1 + subtract, expand_eiw);
+    if (name == NULL)
+	return NULL;
+
+    sprintf((char *)IObuff, "%s%s", subtract ? "-" : "", name);
+    return IObuff;
 }
 
     int
@@ -3567,10 +3576,29 @@ did_set_tabpanelopt(optset_T *args)
     int
 expand_set_tabpanelopt(optexpand_T *args, int *numMatches, char_u ***matches)
 {
+    expand_T *xp = args->oe_xp;
+
+    if (xp->xp_pattern > args->oe_set_arg && *(xp->xp_pattern-1) == ':')
+    {
+	// Within "align:", we have a subgroup of possible options.
+	int align_len = (int)STRLEN("align:");
+	if (xp->xp_pattern - args->oe_set_arg >= align_len &&
+		STRNCMP(xp->xp_pattern - align_len, "align:", align_len) == 0)
+	{
+	    return expand_set_opt_string(
+		    args,
+		    p_tplo_align_values,
+		    ARRAY_LENGTH(p_tplo_align_values) - 1,
+		    numMatches,
+		    matches);
+	}
+	return FAIL;
+    }
+
     return expand_set_opt_string(
 	    args,
-	    p_tpl_values,
-	    ARRAY_LENGTH(p_tpl_values) - 1,
+	    p_tplo_values,
+	    ARRAY_LENGTH(p_tplo_values) - 1,
 	    numMatches,
 	    matches);
 }
